@@ -1,0 +1,545 @@
+
+#include <mechbotShield.h>
+#include <avr/io.h>
+#include "MEC733_I_O.h"
+#include <USART.h>
+
+
+int followWall(void)
+{
+  int measure, left_speed, right_speed, error, base_speed = 600, goal = 275;
+  int Dis_center, Dis_right,Dis_left, p=9;
+
+  boolean PvalueRamp = true;
+  Dis_center = 0;
+  while(PvalueRamp == true)
+  {
+    Dis_right = analog(6);
+    Dis_center = analog(5);
+    Dis_left = analog(4);
+    error = goal - Dis_right;
+
+    left_speed = base_speed + error*p;
+    right_speed = base_speed - error*p;
+
+    motor(left_speed, right_speed);
+
+    if(Dis_center>240)
+    {
+      PvalueRamp = false;
+      motor(0,0);
+    }
+                                                                    else if((Dis_center<40) && (Dis_right<40) && (Dis_center<40))
+                                                                  {
+                                                                    motor(500,500);
+                                                                    delay_ms(600);
+                                                                    PvalueRamp = false;
+                                                                    motor(0,0);
+                                                              
+                                                                  }
+    
+    
+     delay_ms(10);
+    
+  }
+  delay_ms(200);
+}
+
+/********************************************************************************************************/
+/* 
+ * This method controls the sequence of of the code
+ */
+int main(void)
+{
+
+  
+  
+ 
+  int goToLineFollow=1;
+  int goForwardNow;
+
+  // LCD initialization 
+  initSoftSerial();
+  setLCDBackLight(255);
+  clrLCD();
+  moveLCDCursor(0);
+  initADC();
+
+
+
+  while(goToLineFollow==1) //loop jumps to lineFollowing Method 
+  {
+    goToLineFollow = lineFollowMethod(); //breaks from the loop when lineFollowMethod() returns "0"
+  }
+
+  clrLCD();
+  motor(0,0);
+  moveLCDCursor(0);
+  lcdPrint("MISSION MAZE!"); //Bot lines up to climb ramp
+  delay_ms(1000);
+
+  //Path series 1: Go up the ramp 
+  motor(900,900); //uneven motor speed to account for faulty mechBot
+  delay_ms(2500);  //MechBot climbs Ramp
+
+  clrLCD();
+  motor(0,0);
+  delay_ms(200);
+
+  motor(0,0);
+
+
+  //MechBot calls goForward() method to go straight and stop before hitting wall
+  goForwardNow = 1;
+  while(goForwardNow == 1)
+  {
+    goForwardNow = goForward();
+  }
+  delay_ms(100);
+
+  //Path series 2: Calls turnLeft() to make a 90 degrees left turn
+  turnLeft();
+  motor(0,0);
+
+  //mechBot calls goForward() method to go straight and stop before hitting wall
+  goForwardNow = 1;
+  while(goForwardNow == 1)
+  {
+    goForwardNow = goForward();
+  }
+  delay_ms(150);
+
+  //Path series 3: Calls turnRight() to make a 90 degrees right turn
+  turnRight();
+  delay_ms(150);
+
+
+  //mechBot calls goForward() method to go straight and stop before hitting wall
+  goForwardNow = 1;
+  while(goForwardNow == 1)
+  {
+    goForwardNow = goForward();
+  }
+  delay_ms(250);
+
+  //Path series 4: Calls turnLeft() to make a 90 degrees left turn
+  turnLeft();
+
+  //Path series 5: Bot moves forward for 800ms to save time
+  motor(700,800);
+  delay_ms(800);
+  motor(0,0);
+
+  wallFollow();
+  //Path series 6: wallFollow() called to complete the maze using the left wall 
+  goForwardNow = 1;
+ 
+  
+}
+
+/********************************************************************************************************/
+/* 
+ * This method makes the MechBot follow the Black line and come return its status to main method 
+ */
+int lineFollowMethod(void)  
+{
+
+  /* Variable initialization */
+  uint16_t Line1,Line2,Line3,Line4; //sensors
+  uint16_t threshold_table = 250, threshold_blackTape=500; 
+
+  initSoftSerial();
+  setLCDBackLight(255);
+  clrLCD();
+  moveLCDCursor(0);
+  initADC();
+  /* Initializing Motors */
+
+  initMotor();
+  motor(0,0);
+
+  int LineFollow = 1;
+  int bumperIsPressed = 0;
+
+  /* Pushbutton deceleration and initialization */
+  DDRD=DDRD&(~(1<<DDRD3));
+  DDRD=DDRD&(~(1<<DDRD4));
+  DDRD=DDRD&(~(1<<DDRD5));  
+  DDRC=DDRC&(~(1<<DDRC1));
+
+  PORTD=PORTD|(1<<PORTD5);
+  PORTD=PORTD|(1<<PORTD4);
+  PORTD=PORTD|(1<<PORTD3);
+  PORTC=PORTC|(1<<PORTC1);
+
+
+  while(LineFollow==1)
+  {
+    clrLCD();
+    moveLCDCursor(0);
+    lcdPrint("Press Bump To Start!");
+    delay_ms(500);
+    clrLCD();
+
+
+    if ((PIND&(1<<PIND3))==0 || (PIND&(1<<PIND4))==0 || (PIND&(1<<PIND5))==0 || (PINC&(1<<PINC1))==0) /* checking for user input */
+    {
+      bumperIsPressed = 1;
+    } 
+
+
+    while (bumperIsPressed==1) //execute line following loop
+    { 
+      /* Line variables input value from sensors */
+      Line1 = analog(0);
+      Line2 = analog(1);
+      Line3 = analog(2);
+      Line4 = analog(3);
+
+      if (Line2>=700 && Line3>=700) // Sensor 2 & 3 on Blacktape = GO FORWARD
+      {
+        motor(600,600);
+        lcdPrint("GO STRAIGHT");
+        clrLCD();
+
+      } 
+      if (Line2<700) //Sensor 2 on floor = TURN RIGHT
+      {
+        motor(600,-600);
+        lcdPrint("GO RIGHT");
+        clrLCD();
+
+      }
+      if (Line3<700) //Sensor 3 on floor = TURN LEFT
+      {
+        motor(-600,600);
+        lcdPrint("GO LEFT");
+        clrLCD();
+      }
+
+      if (Line1>=875 && Line4>=875) // Sensor 1 & 4 on Tape = BOT STOP
+      {
+
+        motor(0,0);
+        lcdPrint("I STOPPED");
+        clrLCD();
+
+        /*exit all loops and return to Main Method */
+
+        LineFollow = 0;
+        bumperIsPressed = 0;
+      }
+
+    }
+
+  }return(0); // Lets main method know that line following is done
+
+
+}
+
+
+/********************************************************************************************************/
+/* 
+ * Method makes the Mechbot turn right
+ */
+void turnRight(void)
+{
+
+  //initialization of encoders 
+  DDRC=DDRC&(~((1<<DDRC1)|(1<<DDRC2)|(1<<DDRC3)));  
+  PORTC=PORTC|((1<<PORTC1)|(1<<PORTC2)|(1<<PORTC3));
+
+  /*boolean conditions dictate if a loop gets triggered */
+  boolean keepTurning = true;
+  boolean turnRightWheelBackwards = false;
+  boolean turnLeftWheelForwards = false;
+  boolean turnBothWheels = true;
+
+  int left_en_total=0, right_en_total=0,left_en_cur, right_en_cur,left_en_pre, right_en_pre;
+
+  /*Two parameters to vary on this Method */
+  int  base_speed=800;       //speed of wheels during turn
+  int  ticksOnEncoder = 17;  //# of ticks for encoder to turn
+
+  left_en_pre=PINC&(1<<PINC2);
+  right_en_pre=PINC&(1<<PINC3);
+
+  while(keepTurning == true) //while loop that turns the MechBot
+  {
+    if(turnBothWheels == true) // if both encoders wheels spin under ideal behaviour
+    {
+      motor(base_speed,-base_speed);
+    }
+    if(turnRightWheelBackwards == true) //if left wheel overshoots, only turn right wheel backwards
+    {
+      motor(0,-base_speed);
+    }
+    if(turnLeftWheelForwards == true) // if right wheel overshoots, only turn left wheel forward
+    {
+      motor(base_speed,0);
+    }
+
+    left_en_cur=PINC&(1<<PINC2);
+    right_en_cur=PINC&(1<<PINC3);
+
+    if(left_en_cur!=left_en_pre) 
+    { 
+      left_en_total=left_en_total+1; //left encoder total incremented by 1 
+      left_en_pre=left_en_cur;
+    }
+
+    if(right_en_cur!=right_en_pre)
+    {
+      right_en_total=right_en_total+1; // right encoder total incremented by 1
+      right_en_pre=right_en_cur;
+    }
+
+    if((left_en_total>=ticksOnEncoder)&&(right_en_total>=ticksOnEncoder)) //BOT has turned all ticks
+    {
+      motor(0,0);   
+      keepTurning = false;  //exit turning while loop
+    }
+    if((left_en_total>=ticksOnEncoder)&&(right_en_total<ticksOnEncoder)) // To correct overshooting of left wheel
+    {
+      turnRightWheelBackwards = true;
+      turnBothWheels = false;
+      turnLeftWheelForwards = false;
+    }
+    if((left_en_total<ticksOnEncoder)&&(right_en_total>=ticksOnEncoder)) // To correct overshooting of right wheel
+    {
+      turnLeftWheelForwards = true;
+      turnBothWheels = false;
+      turnRightWheelBackwards = false;
+    }
+
+
+  }
+}
+/********************************************************************************************************/
+/*
+ * This Method make the MechBot turn left 
+ */
+void turnLeft(void)
+{
+  //initialization of encoders
+  DDRC=DDRC&(~((1<<DDRC1)|(1<<DDRC2)|(1<<DDRC3)));  
+  PORTC=PORTC|((1<<PORTC1)|(1<<PORTC2)|(1<<PORTC3));
+
+  /*boolean conditions dictate if a loop gets triggered */
+  boolean keepTurning = true;
+  boolean turnRightWheelForwards = false;
+  boolean turnLeftWheelBackwards = false;
+  boolean turnBothWheels = true;
+
+
+  int left_en_total=0, right_en_total=0,left_en_cur, right_en_cur,left_en_pre, right_en_pre;
+
+  /*Two parameters to vary on this Method */
+  int  base_speed=900;       //speed of wheels during turn
+  int  ticksOnEncoder = 17;  //# of ticks for encoder to turn
+
+  left_en_pre=PINC&(1<<PINC2);
+  right_en_pre=PINC&(1<<PINC3);
+
+  while(keepTurning == true) //while loop that turns the MechBot
+  {
+    if(turnBothWheels == true)      // if both encoders wheels spin under ideal behaviour
+    {
+      motor(-base_speed,base_speed);
+    }
+    if(turnLeftWheelBackwards == true) // if right wheel overshoots, turn only left wheel backwards
+    {
+      motor(-base_speed,0);
+    }
+    if(turnRightWheelForwards == true) // if left wheel overshoots, turn only right wheel forwards 
+    {
+      motor(0,base_speed);
+    }
+
+    left_en_cur=PINC&(1<<PINC2);
+    right_en_cur=PINC&(1<<PINC3);
+
+    if(left_en_cur!=left_en_pre) 
+    { 
+      left_en_total=left_en_total+1; // left encoder total incremented by 1
+      left_en_pre=left_en_cur;
+    }
+
+    if(right_en_cur!=right_en_pre)
+    {
+      right_en_total=right_en_total+1; // right encoder total incremented by 1
+      right_en_pre=right_en_cur;
+    }
+
+    if((left_en_total>=ticksOnEncoder)&&(right_en_total>=ticksOnEncoder)) //BOT has turned all ticks
+    {
+      motor(0,0);
+      keepTurning = false;
+    }
+    if((right_en_total>=ticksOnEncoder)&&(left_en_total<ticksOnEncoder)) // To correct overshooting of right wheel 
+    {
+      turnLeftWheelBackwards = true;
+      turnBothWheels = false;
+      turnRightWheelForwards = false;
+    }
+    if((right_en_total<ticksOnEncoder)&&(left_en_total>=ticksOnEncoder)) // To correct overshooting of left wheel
+    {
+      turnRightWheelForwards = true;
+      turnBothWheels = false;
+      turnLeftWheelBackwards = false;
+    }
+
+
+  }
+}
+
+
+/********************************************************************************************************/
+/* 
+ * This method makes the MechBot move forward and stop before hitting the wall 
+ */
+int goForward()
+{
+  uint16_t Dis_center;
+  initSoftSerial();
+  setLCDBackLight(255);
+  clrLCD();
+  moveLCDCursor(0);
+  initADC();
+
+  int goForward=1;
+
+  while (goForward==1) // MechBot moves forward and keeps checking distance from wall 
+  { 
+
+    Dis_center=analog(5); 
+
+    clrLCD();
+    moveLCDCursor(0);
+    lcdPrint("Go Forward!");
+    motor(500,500);
+
+    if(Dis_center>=175) //If MechBot reaches about 1.5inches from the wall 
+    {
+      motor(0,0);
+      goForward=0;
+    }
+  }
+  return(0);  //lets main method know once MechBot has reached its desired proximity to the front wall
+}
+
+/********************************************************************************************************/
+/* 
+ * This method allows the MechBot to follow the left wall 
+ */
+void wallFollow(void)
+{
+  uint16_t Dis_left,Dis_center,Dis_right;
+  uint16_t goal_left = 275, goal_center = 270; 
+
+  int goForwardNow = 0;
+  int stopBot = 0;
+  boolean followTheWall = true; 
+
+  while(followTheWall == true) //wall following loop
+  {
+
+    Dis_left=analog(4); 
+    Dis_center=analog(5); 
+    Dis_right=analog(6);
+
+    /*if((Dis_center<20) && (Dis_left<20) && (Dis_right<20))
+    {
+     
+      motor(0,0);
+      delay_ms(500);
+      clrLCD();
+      moveLCDCursor(0);
+      lcdPrint("ALL DONE!:) ");
+      followTheWall=false;    //loop breaks for following the wall 
+    } */
+     if(Dis_left>=goal_left && Dis_center>250) //Bot turns right when gets close to the wall in the front
+    {
+      clrLCD();
+      moveLCDCursor(0);
+      lcdPrint("RIGHT!!");
+      turnRight();  
+      stopBot++;
+      if(stopBot==1)
+       {
+         goForwardNow = 1;
+         motor(800,-400);
+         delay_ms(75);
+         while(goForwardNow == 1)
+           {
+            goForwardNow = goForward();
+           }
+           turnRight();
+           stopBot++;
+           delay_ms(250);
+       }
+    }
+    if(Dis_left<=goal_left && Dis_center<=goal_center) //Bot corrects to the Right
+    {
+      motor(-500,700);
+      clrLCD();
+      lcdPrint("Turning Right!");
+      moveLCDCursor(0);
+      delay_ms(30);
+
+    }
+    if(Dis_left>=goal_left && Dis_center<=goal_center) //Bot corrects to the left
+    {
+      motor(700,-500);
+      clrLCD();
+      lcdPrint("Turning Left!");
+      moveLCDCursor(0);
+      delay_ms(10);
+    }
+    if(stopBot==2)
+    {
+      motor(1000,1000);
+      delay_ms(400);
+      followWall();     
+      motor(0,0);
+      followTheWall = false;
+    }
+    else //Bot moves forward
+    {
+      motor(500,500);
+      delay_ms(25);
+    }
+  }
+
+
+}
+
+/****************************************************************************************************************/
+/* 
+ * Method fixes the orientation of the MechBot
+ */
+void becomeStraight(void)
+{
+  uint16_t Dis_left,Dis_center,Dis_right;
+  uint16_t goal_right = 250;
+  boolean becomingStraight = true;
+
+  while(becomingStraight == true)
+  {
+    Dis_right = analog(6);
+
+    if(Dis_right>goal_right)
+    {
+      motor(400,-400);
+    }
+    if(Dis_right<goal_right)
+    {
+      motor(-400,400);
+    }
+    if(Dis_right==goal_right)
+    {
+      becomingStraight = false;
+      motor(0,0);
+    }
+  } 
+} 
